@@ -419,6 +419,7 @@ KX_API(int,kx_dsp_reset(kx_hw *hw))
       kx_connect_microcode(hw,surrounder2_pgm,"sR",epilog_pgm,"out5");
       kx_connect_microcode(hw,surrounder2_pgm,"Center",epilog_pgm,"out6");
       kx_connect_microcode(hw,surrounder2_pgm,"LFE",epilog_pgm,"out7");
+       //maybe this?
       kx_connect_microcode(hw,surrounder2_pgm,"sCenter1",epilog_pgm,"out8");
       kx_connect_microcode(hw,surrounder2_pgm,"sCenter2",epilog_pgm,"out9");
 

@@ -1,7 +1,7 @@
 //  kX Project audio driver for Mac OS X
 //  Created by Eugene Gavrilov.
 //  Copyright 2008-2014 Eugene Gavrilov. All rights reserved.
-//  https://github.com/kxproject/ (previously www.kxproject.com)
+//  www.kxproject.com
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -28,6 +28,10 @@
 #undef debug
 #include "cedebug.h"
 
+#include <IOKit/IOLib.h>
+#include <IOKit/IORegistryEntry.h>
+#include <mach/mach_types.h>
+
 #define super IOAudioDevice
 OSDefineMetaClassAndStructors(kXAudioDevice, IOAudioDevice)
 
@@ -42,15 +46,26 @@ bool kXAudioDevice::init(OSDictionary *dictionary)
     hw=NULL;
     interruptEventSource=NULL;
     epilog_pgm=-1;
+    
     is_muted=0;
+    
     master_volume[0]=0x80000000;
     master_volume[1]=0x80000000;
     
+    is_input_muted=0;
+    
+    in_volume[0]=0x80000000;
+    in_volume[1]=0x80000000;
+    
     engine=NULL;
+    
+    count=0;
     
     fpga_fw=0;
     fpga_fw_offset=0;
     fpga_fw_size=0;
+    
+    temp_dictionary = dictionary;
     
     return super::init(dictionary);
 }
@@ -60,10 +75,45 @@ bool kXAudioDevice::initHardware(IOService *provider)
     bool result = false;
     IOWorkLoop *workLoop_=NULL;
     
+    char tmp[16];
+    
+    if (PE_parse_boot_argn("-kx_disable", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxdisable", tmp, sizeof(tmp))){
+        debug(DBGCLASS"[%p] Driver disabled by disable boot arg\n",this);
+        return false;
+    }
+    
+    if (count != 0) {
+        
+        debug(DBGCLASS"[%p]::initHardware: adding a new card ----------------------\n",this);
+        kXAudioDevice *device = NULL;
+        
+        device = new kXAudioDevice;
+        
+        if (!device){
+            debug(DBGCLASS"[%p]::initHardware: failed to initialize a new kXAudioDevice object\n",this);
+            goto END;
+        }
+        
+        if (!device->init(temp_dictionary)){
+            debug(DBGCLASS"[%p]::initHardware: the init method of the new kXAudioDevice has returned false\n",this);
+            goto END;
+        }
+        
+        if (!device->initHardware(provider)){
+            debug(DBGCLASS"[%p]::initHardware: failed to inizialize the new audio card\n",this);
+            goto END;
+        }
+        
+        count++;
+        
+        result = true;
+    }
+    
     debug(DBGCLASS"[%p]::initHardware(%p)\n", this, provider);
     
-    if (!super::initHardware(provider)) 
+    if (!super::initHardware(provider))
     {
+        debug(DBGCLASS"[%p]::initHardware: spuer class initaliazzation failed\n",this);
         goto Done;
     }
     
@@ -71,6 +121,7 @@ bool kXAudioDevice::initHardware(IOService *provider)
     pciDevice = OSDynamicCast(IOPCIDevice, provider);
     if (!pciDevice)
     {
+        debug(DBGCLASS"[%p]::initHardware: failed to get pci device\n",this);
         goto Done;
     }
     
@@ -88,24 +139,25 @@ bool kXAudioDevice::initHardware(IOService *provider)
     // our secondary interrupt handler is to be called.  In our case, we
     // can do the work in the filter routine and then return false to
     // indicate that we do not want our secondary handler called
-    interruptEventSource = IOFilterInterruptEventSource::filterInterruptEventSource(this, 
-                                                                                    kXAudioDevice::interruptHandler, 
+    interruptEventSource = IOFilterInterruptEventSource::filterInterruptEventSource(this,
+                                                                                    kXAudioDevice::interruptHandler,
                                                                                     kXAudioDevice::interruptFilter,
                                                                                     provider);
     if (!interruptEventSource)
     {
+        debug(DBGCLASS"[%p]::initHardware: failed to get interrupts\n",this);
         goto Done;
     }
     
     // In order to allow the interrupts to be received, the interrupt event source must be
     // added to the IOWorkLoop
-    // Additionally, interrupts will not be firing until the interrupt event source is 
+    // Additionally, interrupts will not be firing until the interrupt event source is
     // enabled by calling interruptEventSource->enable()
     workLoop_->addEventSource(interruptEventSource);
     
     UInt8 bus,device,function;
     UInt32 dev_id,subsys_id,chiprev_id;
-
+    
     word port;
     
     bus = pciDevice->getBusNumber();
@@ -120,12 +172,13 @@ bool kXAudioDevice::initHardware(IOService *provider)
     port=port&0xfffe;
     
     debug(DBGCLASS"[%p]::initHardware: bus/dev/func: %d/%d/%d; device/subsys/chip: %08x:%08x:%08x - at port %x\n",this,bus,device,function,(unsigned int)dev_id,(unsigned int)subsys_id,(unsigned int)chiprev_id,(unsigned int)port);
-
+    
     // Config a map for the PCI config base registers
     // We need to keep this map around until we're done accessing the registers
     deviceMap = pciDevice->mapDeviceMemoryWithRegister(kIOPCIConfigBaseAddress0);
     if (!deviceMap)
     {
+        debug(DBGCLASS"[%p]::initHardware: failed to get device memory map\n",this);
         goto Done;
     }
     
@@ -136,29 +189,29 @@ bool kXAudioDevice::initHardware(IOService *provider)
           (unsigned) deviceMap->getVirtualAddress(),
           (unsigned int)(deviceMap->getVirtualAddress()+deviceMap->getLength()-1));
     
-    // Enable the PCI memory access - the kernel will panic if this isn't done before accessing the 
+    // Enable the PCI memory access - the kernel will panic if this isn't done before accessing the
     // mapped registers
     pciDevice->setMemoryEnable(true);
     pciDevice->setIOEnable(true);
     pciDevice->setBusMasterEnable(true);
     
-    setManufacturerName("Eugene Gavrilov, kX Project");
-    setDeviceTransportType(kIOAudioDeviceTransportTypePCI);
-
+    setManufacturerName("Mod. by Pietro Caruso (ITzTravelInTime), created by Eugene Gavrilov, kX Project");
+    //setDeviceTransportType(kIOAudioDeviceTransportTypePCI);
+    
     kx_callbacks cb;
     memset(&cb,0,sizeof(cb));
-     
+    
     cb.call_with=this;
     cb.irql=0x0; // unused
     cb.io_base=deviceMap->getPhysicalAddress();
-     
+    
     cb.device=dev_id;
     cb.subsys=subsys_id;
     cb.chip_rev=chiprev_id;
     cb.bus=bus;
     cb.dev=device;
     cb.func=function;
-     
+    
     cb.malloc_func=&kXAudioDevice::malloc_func;
     cb.send_message=&kXAudioDevice::send_message;
     cb.free_func=&kXAudioDevice::free_func;
@@ -166,7 +219,7 @@ bool kXAudioDevice::initHardware(IOService *provider)
     cb.lmem_free_func=&kXAudioDevice::lmem_free_func;
     cb.lmem_get_addr_func=&kXAudioDevice::lmem_get_addr_func;
     cb.notify_func=&kXAudioDevice::notify_func;
-     
+    
     cb.debug_func=&kXAudioDevice::debug_func;
     cb.pci_alloc=&kXAudioDevice::pci_alloc;
     cb.pci_free=&kXAudioDevice::pci_free;
@@ -178,13 +231,87 @@ bool kXAudioDevice::initHardware(IOService *provider)
     
     // default parameters:
     kx_defaults(NULL,&cb);
-
-    int ret;
-    ret=kx_init(&hw,&cb,0);
     
-    if(ret || hw==NULL)
+    //instanciates hw object
+    int rets;
+    
+    rets = 0;
+    
+    (cb.malloc_func)(cb.call_with,sizeof(kx_hw),(void **)&hw,KX_NONPAGED);
+    
+    if(hw==NULL)
+        rets = -2;
+    
+    my_memset(hw,0,sizeof(kx_hw));
+    
+    
+    debug(DBGCLASS"[%p]::initHardware: boot args detection started\n",this);
+    //boot args checking
+    
+    int arg;
+    arg = 0;
+    
+    if (PE_parse_boot_argn("-kx_debug", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxdebug", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxspec", tmp, sizeof(tmp))){
+        hw->nameDebug = true;
+        hw->showBusInName = true;
+        arg++;
+        debug(DBGCLASS"[%p]::initHardware: debug mode enabled by boot arg -kx_debug or -kxdebug or -kxspec\n",this);
+    }else{
+        hw->nameDebug = false;
+        hw->showBusInName = false;
+    }
+    
+    
+    if (PE_parse_boot_argn("-kx_exp_deb", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kx_beta", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxbeta", tmp, sizeof(tmp))){
+        hw->testImputs = true;
+        arg++;
+        debug(DBGCLASS"[%p]::initHardware: debug of experimental features enbled by -kx_exp_deb or -kx_beta or -kxbeta\n",this);
+    }else{
+        hw->testImputs = false;
+    }
+    
+    if (PE_parse_boot_argn("-kx_exp_deb_o", tmp, sizeof(tmp))){
+        hw->enableOriginalDebugging = true;
+        
+        arg++;
+        debug(DBGCLASS"[%p]::initHardware: debug of experimental features enbled by -kx_exp_deb_o\n",this);
+    }else{
+        hw->enableOriginalDebugging = false;
+    }
+    
+    if (PE_parse_boot_argn("-kx_original", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxoriginal", tmp, sizeof(tmp))){
+        hw->disableFixes = true;
+        
+        hw->defaultSampleRate = 48000;
+        
+        arg++;
+        debug(DBGCLASS"[%p]::initHardware: fixes of the mod disabled by -kx_original or -kxoriginal\n",this);
+    }else{
+        hw->disableFixes = false;
+        
+        if (hw->defaultSampleRate == 0){
+            hw->defaultSampleRate = 48000;
+        }
+        
+    }
+    
+    
+    
+    if (arg == 0){
+        debug(DBGCLASS"[%p]::initHardware: boot args detection finished, none found\n",this);
+    }else{
+        debug(DBGCLASS"[%p]::initHardware: boot args detection finished, [%i] found\n",this, arg);
+    }
+    
+    int ret;
+    //ret=kx_init(&hw,&cb,0);
+    
+    ret=kx_init_ni(*hw, &cb, 0, rets);
+    //ret=kx_init_ni(*hw, NULL, 0, rets);
+    
+    if(ret || hw==NULL || rets != 0)
     {
-        debug(DBGCLASS"[%p]::init: failed [%d]\n",this,ret);
+        debug(DBGCLASS"[%p]::init: failed to initialize hardware object [%d][%p][%d]\n",this,ret,hw,rets);
         
         if(hw)
         {
@@ -201,11 +328,23 @@ bool kXAudioDevice::initHardware(IOService *provider)
     kx_defaults(hw,NULL);
     
     char device_name[KX_MAX_STRING];
-    strncpy(device_name,"kX ",KX_MAX_STRING);
-    strncat(device_name,hw->card_name,KX_MAX_STRING);
-
+    strncpy(device_name,hw->card_name,KX_MAX_STRING);
+    
+    setDeviceShortName(device_name);
+    
     setDeviceName(device_name);
-    setDeviceShortName("kXAudio");
+    
+    setDeviceModelName(device_name);
+    
+    if (hw->is_cardbus){
+        setDeviceTransportType(kIOAudioDeviceTransportTypeOther);
+    }else{
+        setDeviceTransportType(kIOAudioDeviceTransportTypePCI);
+    }
+    
+    //setDeviceShortName("kX Audio Card");
+    
+    debug(DBGCLASS"[%p]::initHardware: device name: '%s'\n",this, device_name);
     
     // The interruptEventSource needs to be enabled to allow interrupts to start firing
     if(interruptEventSource)
@@ -213,16 +352,22 @@ bool kXAudioDevice::initHardware(IOService *provider)
     
     if (!createAudioEngine())
     {
+        debug(DBGCLASS"[%p]::initHardware: failed to create the audio engine\n",this);
         goto Done;
     }
     
-
+    if (!audioEngines || (audioEngines->getCount() == 0)){
+        debug(DBGCLASS"[%p]::initHardware: no audio engines created\n",this);
+        goto Done;
+    }
+    
     result = true;
     
 Done:
-
-    if (!result) 
+    
+    if (!result)
     {
+        debug(DBGCLASS"[%p]::initHardware: failed, object clearing\n",this);
         if(interruptEventSource)
         {
             interruptEventSource->disable();
@@ -249,9 +394,15 @@ Done:
         }
         
         pciDevice=NULL;
+    }else{
+        count++;
     }
     
+    
+    
+END:
     return result;
+    
 }
 
 void kXAudioDevice::stop(IOService *provider)
@@ -260,7 +411,7 @@ void kXAudioDevice::stop(IOService *provider)
     
     // Assuming we don't need interrupts after stopping the audio engine, we can disable them here
     if(interruptEventSource)
-     interruptEventSource->disable();
+        interruptEventSource->disable();
     
     super::stop(provider);
 }
@@ -268,12 +419,12 @@ void kXAudioDevice::stop(IOService *provider)
 void kXAudioDevice::free()
 {
     debug(DBGCLASS"[%p]::free()\n", this);
-
+    
     // When our device is being stopped and torn down, we should go ahead and remove
     // the interrupt event source from the IOWorkLoop
     // Additionally, we'll go ahead and release the interrupt event source since it isn't
     // needed any more
-
+    
     if (interruptEventSource)
     {
         interruptEventSource->disable();
@@ -316,18 +467,19 @@ void kXAudioDevice::free()
     
     super::free();
 }
-    
+
 bool kXAudioDevice::createAudioEngine()
 {
     bool result = false;
     kXAudioEngine *audioEngine = NULL;
     // IOAudioControl *control;
     
-    debug(DBGCLASS"[%p]::createAudioEngine()\n", this);
+    debug(DBGCLASS"[%p]::createAudioEngine() started\n", this);
     
     audioEngine = new kXAudioEngine;
     if (!audioEngine)
     {
+        debug(DBGCLASS"[%p]::createAudioEngine() init failed: can't initialize\n", this);
         goto Done;
     }
     
@@ -336,14 +488,24 @@ bool kXAudioDevice::createAudioEngine()
     // initialization - use it like a constructor
     if (!audioEngine->init(hw))
     {
+        debug(DBGCLASS"[%p]::createAudioEngine() init failed: can't initialize custom class\n", this);
         goto Done;
     }
     
-    create_audio_controls(audioEngine);
+    if (create_audio_controls(audioEngine) != 0){
+        debug(DBGCLASS"[%p]::createAudioEngine() create audio controls failed\n", this);
+        goto Done;
+    }
     
     // Active the audio engine - this will cause the audio engine to have start() and initHardware() called on it
     // After this function returns, that audio engine should be ready to begin vending audio services to the system
-    activateAudioEngine(audioEngine);
+    //activateAudioEngine(audioEngine);
+    
+    if (activateAudioEngine(audioEngine, true) != kIOReturnSuccess){
+        debug(DBGCLASS"[%p]::createAudioEngine() failed to activate audio engine\n", this);
+        goto Done;
+    }
+    
     // Once the audio engine has been activated, release it so that when the driver gets terminated,
     // it gets freed
     audioEngine->release();
@@ -351,14 +513,16 @@ bool kXAudioDevice::createAudioEngine()
     result = true;
     
 Done:
-        
-    engine=audioEngine;
-
+    
+    engine = audioEngine;
+    
+    count++;
+    
     if (!result && (audioEngine != NULL))
     {
         audioEngine->release();
     }
-
+    
     return result;
 }
 
@@ -397,7 +561,7 @@ bool kXAudioDevice::interruptFilter(OSObject *owner, IOFilterInterruptEventSourc
         dta.what=KX_SYNC_IPR_IRQ;
         dta.hw=that->hw;
         that->sync(&dta); // this calls kx_sync() -> kx_critical_handler()
-
+        
         if(dta.ret==0 && dta.irq_mask) // our IRQ and have something to process in DPC?
         {
             if(dta.irq_mask&IRQ_VOICE)
@@ -428,7 +592,7 @@ bool kXAudioDevice::interruptFilter(OSObject *owner, IOFilterInterruptEventSourc
         }
         return false;
     }
-
+    
     return false;
 }
 
@@ -454,42 +618,39 @@ int kXAudioDevice::create_audio_controls(IOAudioEngine *audioEngine)
     kx_lock_release(hw,&hw->dsp_lock,&flags);
     
     {
-    IOAudioLevelControl *control=NULL;
-    
-    // Create a left & right output volume control with an int range from 0 to 65535
-    // and a db range from -100.0 to 0.0
-    // Once each control is added to the audio engine, they should be released
-    // so that when the audio engine is done with them, they get freed properly
-    control = IOAudioLevelControl::createVolumeControl(65535,   // Initial value
-                                                       0,       // min value
-                                                       65535,   // max value
-                                                       (-100 << 16) + (0),  // -100.0 in IOFixed (16.16)
-                                                       0,       // max 0.0 in IOFixed
-                                                       kIOAudioControlChannelIDAll,
-                                                       kIOAudioControlChannelNameAll,
-                                                       0,       // control ID - driver-defined
-                                                       kIOAudioControlUsageOutput);
-    if (!control)
-        goto Done;
-    
-    control->setLinearScale(false);
-    control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)volumeChangeHandler, this);
-    audioEngine->addDefaultAudioControl(control);
-    control->release();
-    
-    for(int i=0;i<8;i++)
-    {
-        // order is not important actually
+        IOAudioLevelControl *control=NULL;
+        
+        // Create a left & right output volume control with an int range from 0 to 65535
+        // and a db range from -100.0 to 0.0
+        // Once each control is added to the audio engine, they should be released
+        // so that when the audio engine is done with them, they get freed properly
+        control = IOAudioLevelControl::createVolumeControl(65535,   // Initial value
+                                                           0,       // min value
+                                                           65535,   // max value
+                                                           -(100 << 16) + (0),  // -100.0 in IOFixed (16.16)
+                                                           0,       // max 0.0 in IOFixed
+                                                           kIOAudioControlChannelIDAll,
+                                                           kIOAudioControlChannelNameAll,
+                                                           0,       // control ID - driver-defined
+                                                           kIOAudioControlUsageOutput);
+        if (!control)
+            goto Done;
+        
+        control->setLinearScale(false);
+        control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)volumeChangeHandler, this);
+        audioEngine->addDefaultAudioControl(control);
+        control->release();
+        
         const char *names[]=
         {
-          kIOAudioControlChannelNameLeft,
-          kIOAudioControlChannelNameRight,
-          kIOAudioControlChannelNameCenter,
-          kIOAudioControlChannelNameLeftRear,
-          kIOAudioControlChannelNameRightRear,
-          kIOAudioControlChannelNameSub,
-          "BackLeft",
-          "BackRight" };
+            kIOAudioControlChannelNameLeft,
+            kIOAudioControlChannelNameRight,
+            kIOAudioControlChannelNameCenter,
+            kIOAudioControlChannelNameLeftRear,
+            kIOAudioControlChannelNameRightRear,
+            kIOAudioControlChannelNameSub,
+            "BackLeft",
+            "BackRight" };
         
         int ids[]=
         {
@@ -503,44 +664,149 @@ int kXAudioDevice::create_audio_controls(IOAudioEngine *audioEngine)
             kIOAudioControlChannelIDDefaultSub+2
         };
         
+        
+        for(int i=0;i<8;i++)
+        {
+            // order is not important actually
+            control = IOAudioLevelControl::createVolumeControl(65535,   // Initial value
+                                                               0,       // min value
+                                                               65535,   // max value
+                                                               -(100 << 16) + (0),  // min -100.0 in IOFixed (16.16)
+                                                               0,       // max 0.0 in IOFixed
+                                                               ids[i],
+                                                               names[i],
+                                                               0,       // control ID - driver-defined
+                                                               kIOAudioControlUsageOutput);
+            if (!control)
+                goto Done;
+            
+            control->setLinearScale(false);
+            control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)volumeChangeHandler, this);
+            audioEngine->addDefaultAudioControl(control);
+            control->release();
+        } // for
+    }
+    {
+        IOAudioToggleControl *control=NULL;
+        
+        // Create an output mute control
+        control = IOAudioToggleControl::createMuteControl(false,    // initial state - unmuted
+                                                          kIOAudioControlChannelIDAll,  // Affects all channels
+                                                          kIOAudioControlChannelNameAll,
+                                                          0,        // control ID - driver-defined
+                                                          kIOAudioControlUsageOutput);
+        
+        if (!control) {
+            goto Done;
+        }
+        control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)outputMuteChangeHandler, this);
+        audioEngine->addDefaultAudioControl(control);
+        control->release();
+        
+        
+    }
+    
+    
+    //input
+    
+    /*{
+        IOAudioLevelControl *control=NULL;
+        // Create a left & right input gain control with an int range from 0 to 65535
+        // and a db range from 0 to 22.5
         control = IOAudioLevelControl::createVolumeControl(65535,   // Initial value
                                                            0,       // min value
                                                            65535,   // max value
-                                                           (-100 << 16) + (0),  // min -100.0 in IOFixed (16.16)
-                                                           0,       // max 0.0 in IOFixed
-                                                           ids[i],
-                                                           names[i],
+                                                           0,       // min 0.0 in IOFixed
+                                                           (22 << 16) + (32768),    // 22.5 in IOFixed (16.16)
+                                                           kIOAudioControlChannelIDDefaultRight,   // Affects right channel
+                                                           kIOAudioControlChannelNameRight,
                                                            0,       // control ID - driver-defined
-                                                           kIOAudioControlUsageOutput);
-        if (!control)
+                                                           kIOAudioControlUsageInput);
+        if (!control) {
             goto Done;
-        
-        control->setLinearScale(false);
-        control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)volumeChangeHandler, this);
+        }
+        control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)gainChangeHandler, this);
         audioEngine->addDefaultAudioControl(control);
         control->release();
-    } // for
     }
     {
-    IOAudioToggleControl *control=NULL;
-        
-    // Create an output mute control
-    control = IOAudioToggleControl::createMuteControl(false,    // initial state - unmuted
-                                                      kIOAudioControlChannelIDAll,  // Affects all channels
-                                                      kIOAudioControlChannelNameAll,
-                                                      0,        // control ID - driver-defined
-                                                      kIOAudioControlUsageOutput);
+        IOAudioLevelControl *control=NULL;
+        // Create a left & right input gain control with an int range from 0 to 65535
+        // and a db range from 0 to 22.5
+        control = IOAudioLevelControl::createVolumeControl(65535,   // Initial value
+                                                           0,       // min value
+                                                           65535,   // max value
+                                                           0,       // min 0.0 in IOFixed
+                                                           (22 << 16) + (32768),    // 22.5 in IOFixed (16.16)
+                                                           kIOAudioControlChannelIDDefaultLeft,   // Affects left channel
+                                                           kIOAudioControlChannelNameLeft,
+                                                           0,       // control ID - driver-defined
+                                                           kIOAudioControlUsageInput);
+        if (!control) {
+            goto Done;
+        }
+        control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)gainChangeHandler, this);
+        audioEngine->addDefaultAudioControl(control);
+        control->release();
+    }*/
     
-    if (!control) {
-        goto Done;
+    if (hw->testImputs == true){
+    
+    {
+        IOAudioLevelControl *control=NULL;
+        // Create a left & right input gain control with an int range from 0 to 65535
+        // and a db range from 0 to 22.5
+        control = IOAudioLevelControl::createVolumeControl(65535,   // Initial value
+                                                           0,       // min value
+                                                           65535,   // max value
+                                                           0,       // min 0.0 in IOFixed
+                                                           (22 << 16) + (32768),    // 22.5 in IOFixed (16.16)
+                                                           kIOAudioControlChannelIDAll,   // Affects right channel
+                                                           kIOAudioControlChannelNameAll,
+                                                           0,       // control ID - driver-defined
+                                                           kIOAudioControlUsageInput);
+        if (!control) {
+            goto Done;
+        }
+        control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)gainChangeHandler, this);
+        audioEngine->addDefaultAudioControl(control);
+        control->release();
     }
     
-    control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)outputMuteChangeHandler, this);
-    audioEngine->addDefaultAudioControl(control);
-    control->release();
+    /*{
+        IOAudioToggleControl *control = NULL;
+        
+        control = IOAudioToggleControl::createPassThruMuteControl(false,
+                                                                  kIOAudioControlChannelIDAll,
+                                                                  kIOAudioControlChannelNameAll,
+                                                                  kIOAudioControlUsagePassThru);
+        
+        control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)inputMuteChangeHandler, this);
+        audioEngine->addDefaultAudioControl(control);
+        control->release();
+        
+    }*/
+    
+    {
+        IOAudioToggleControl *control=NULL;
+        // Create an input mute control
+        control = IOAudioToggleControl::createMuteControl(false,   // initial state - unmuted
+                                                          kIOAudioControlChannelIDAll, // Affects all channels
+                                                          kIOAudioControlChannelNameAll,
+                                                          0,       // control ID - driver-defined
+                                                          kIOAudioControlUsageInput);
+        
+        if (!control) {
+            goto Done;
+        }
+        
+        control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)inputMuteChangeHandler, this);
+        audioEngine->addDefaultAudioControl(control);
+        control->release();
+    }
     }
 Done:
-        return 0;
+    return 0;
 }
 
 IOReturn kXAudioDevice::volumeChangeHandler(IOService *target, IOAudioControl *volumeControl, SInt32 oldValue, SInt32 newValue)
@@ -606,8 +872,8 @@ IOReturn kXAudioDevice::volumeChanged(IOAudioControl *volumeControl, SInt32 oldV
         else
             if(hw->is_edsp)
                 regs=regs_edsp;
-        else
-            regs=regs_gen;
+            else
+                regs=regs_gen;
         
         dword vol;
         
@@ -645,7 +911,7 @@ IOReturn kXAudioDevice::volumeChanged(IOAudioControl *volumeControl, SInt32 oldV
               this, volumeControl, (int)oldValue, (int)newValue, (int)volumeControl->getChannelID(),(unsigned int)vol,epilog_pgm,regs[id]);
     }
     
-    // Add hardware volume code change 
+    // Add hardware volume code change
     
     return kIOReturnSuccess;
 }
@@ -656,7 +922,7 @@ IOReturn kXAudioDevice::outputMuteChangeHandler(IOService *target, IOAudioContro
     kXAudioDevice *audioDevice;
     
     audioDevice = (kXAudioDevice *)target;
-    if (audioDevice) 
+    if (audioDevice)
     {
         result = audioDevice->outputMuteChanged(muteControl, oldValue, newValue);
     }
@@ -671,6 +937,7 @@ IOReturn kXAudioDevice::outputMuteChanged(IOAudioControl *muteControl, SInt32 ol
     // Add output mute code here
     if(muteControl && hw && epilog_pgm!=-1)
     {
+        
         if(newValue)
             is_muted=1;
         else
@@ -688,36 +955,36 @@ IOReturn kXAudioDevice::outputMuteChanged(IOAudioControl *muteControl, SInt32 ol
  // Audio Controls
  // UNUSED
  
-    // Create a left & right input gain control with an int range from 0 to 65535
-    // and a db range from 0 to 22.5
-    control = IOAudioLevelControl::createVolumeControl(65535,   // Initial value
-                                                       0,       // min value
-                                                       65535,   // max value
-                                                       0,       // min 0.0 in IOFixed
-                                                       (22 << 16) + (32768),    // 22.5 in IOFixed (16.16)
-                                                       kIOAudioControlChannelIDDefaultLeft,
-                                                       kIOAudioControlChannelNameLeft,
-                                                       0,       // control ID - driver-defined
-                                                       kIOAudioControlUsageInput);
-    if (!control) {
-        goto Done;
-    }
+ // Create a left & right input gain control with an int range from 0 to 65535
+ // and a db range from 0 to 22.5
+ control = IOAudioLevelControl::createVolumeControl(65535,   // Initial value
+ 0,       // min value
+ 65535,   // max value
+ 0,       // min 0.0 in IOFixed
+ (22 << 16) + (32768),    // 22.5 in IOFixed (16.16)
+ kIOAudioControlChannelIDDefaultLeft,
+ kIOAudioControlChannelNameLeft,
+ 0,       // control ID - driver-defined
+ kIOAudioControlUsageInput);
+ if (!control) {
+ goto Done;
+ }
  
  control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)gainChangeHandler, this);
  audioEngine->addDefaultAudioControl(control);
  control->release();
  
  control = IOAudioLevelControl::createVolumeControl(65535,  // Initial value
-                                                    0,      // min value
-                                                    65535,  // max value
-                                                    0,      // min 0.0 in IOFixed
-                                                    (22 << 16) + (32768),   // max 22.5 in IOFixed (16.16)
-                                                    kIOAudioControlChannelIDDefaultRight,   // Affects right channel
-                                                    kIOAudioControlChannelNameRight,
-                                                    0,      // control ID - driver-defined
-                                                    kIOAudioControlUsageInput);
+ 0,      // min value
+ 65535,  // max value
+ 0,      // min 0.0 in IOFixed
+ (22 << 16) + (32768),   // max 22.5 in IOFixed (16.16)
+ kIOAudioControlChannelIDDefaultRight,   // Affects right channel
+ kIOAudioControlChannelNameRight,
+ 0,      // control ID - driver-defined
+ kIOAudioControlUsageInput);
  if (!control) {
-     goto Done;
+ goto Done;
  }
  
  control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)gainChangeHandler, this);
@@ -726,45 +993,69 @@ IOReturn kXAudioDevice::outputMuteChanged(IOAudioControl *muteControl, SInt32 ol
  
  // Create an input mute control
  control = IOAudioToggleControl::createMuteControl(false,   // initial state - unmuted
-                                                   kIOAudioControlChannelIDAll, // Affects all channels
-                                                   kIOAudioControlChannelNameAll,
-                                                   0,       // control ID - driver-defined
-                                                   kIOAudioControlUsageInput);
+ kIOAudioControlChannelIDAll, // Affects all channels
+ kIOAudioControlChannelNameAll,
+ 0,       // control ID - driver-defined
+ kIOAudioControlUsageInput);
  
  if (!control) {
-     goto Done;
+ goto Done;
  }
  
  control->setValueChangeHandler((IOAudioControl::IntValueChangeHandler)inputMuteChangeHandler, this);
  audioEngine->addDefaultAudioControl(control);
  control->release();
+ 
+ 
+ IOReturn kXAudioDevice::gainChangeHandler(IOService *target, IOAudioControl *gainControl, SInt32 oldValue, SInt32 newValue)
+ {
+ IOReturn result = kIOReturnBadArgument;
+ kXAudioDevice *audioDevice;
+ 
+ audioDevice = (kXAudioDevice *)target;
+ if (audioDevice) {
+ result = audioDevice->gainChanged(gainControl, oldValue, newValue);
+ }
+ 
+ return result;
+ }
+ 
+ IOReturn kXAudioDevice::gainChanged(IOAudioControl *gainControl, SInt32 oldValue, SInt32 newValue)
+ {
+ debug(DBGCLASS"[%p]::gainChanged(%p, %ld, %ld)\n", this, gainControl, oldValue, newValue);
+ 
+ if (gainControl) {
+ debug("\t-> Channel %ld\n", gainControl->getChannelID());
+ }
+ 
+ // Add hardware gain change code here
+ 
+ return kIOReturnSuccess;
+ }
+ 
+ IOReturn kXAudioDevice::inputMuteChangeHandler(IOService *target, IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue)
+ {
+ IOReturn result = kIOReturnBadArgument;
+ kXAudioDevice *audioDevice;
+ 
+ audioDevice = (kXAudioDevice *)target;
+ if (audioDevice) {
+ result = audioDevice->inputMuteChanged(muteControl, oldValue, newValue);
+ }
+ 
+ return result;
+ }
+ 
+ IOReturn kXAudioDevice::inputMuteChanged(IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue)
+ {
+ debug(DBGCLASS"[%p]::inputMuteChanged(%p, %ld, %ld)\n", this, muteControl, oldValue, newValue);
+ 
+ // Add input mute change code here
+ 
+ return kIOReturnSuccess;
+ }
+ */
 
-
-IOReturn kXAudioDevice::gainChangeHandler(IOService *target, IOAudioControl *gainControl, SInt32 oldValue, SInt32 newValue)
-{
-    IOReturn result = kIOReturnBadArgument;
-    kXAudioDevice *audioDevice;
-    
-    audioDevice = (kXAudioDevice *)target;
-    if (audioDevice) {
-        result = audioDevice->gainChanged(gainControl, oldValue, newValue);
-    }
-    
-    return result;
-}
-
-IOReturn kXAudioDevice::gainChanged(IOAudioControl *gainControl, SInt32 oldValue, SInt32 newValue)
-{
-    debug(DBGCLASS"[%p]::gainChanged(%p, %ld, %ld)\n", this, gainControl, oldValue, newValue);
-    
-    if (gainControl) {
-        debug("\t-> Channel %ld\n", gainControl->getChannelID());
-    }
-    
-    // Add hardware gain change code here 
-    
-    return kIOReturnSuccess;
-}
 
 IOReturn kXAudioDevice::inputMuteChangeHandler(IOService *target, IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue)
 {
@@ -781,14 +1072,109 @@ IOReturn kXAudioDevice::inputMuteChangeHandler(IOService *target, IOAudioControl
 
 IOReturn kXAudioDevice::inputMuteChanged(IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue)
 {
-    debug(DBGCLASS"[%p]::inputMuteChanged(%p, %ld, %ld)\n", this, muteControl, oldValue, newValue);
+    debug(DBGCLASS"[%p]::inputMuteChanged(%p, %d, %d)\n", this, muteControl, oldValue, newValue);
     
     // Add input mute change code here
     
+    if(muteControl && hw && epilog_pgm!=-1)
+    {
+        
+        
+        if(newValue)
+            is_input_muted=1;
+        else
+            is_input_muted=0;
+        
+        
+        kx_set_dsp_register(hw,epilog_pgm,"RecLVol",is_input_muted?0x0:in_volume[0]);
+        kx_set_dsp_register(hw,epilog_pgm,"RecRVol",is_input_muted?0x0:in_volume[1]);
+    }
+    
     return kIOReturnSuccess;
 }
-*/
+//passtrught
+IOReturn kXAudioDevice::passTroughtChangeHandler(IOService *target, IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue)
+{
+    IOReturn result = kIOReturnBadArgument;
+    kXAudioDevice *audioDevice;
+    
+    audioDevice = (kXAudioDevice *)target;
+    if (audioDevice) {
+        result = audioDevice->inputMuteChanged(muteControl, oldValue, newValue);
+    }
+    
+    return result;
+}
 
+IOReturn kXAudioDevice::passTruoughtChanged(IOAudioControl *muteControl, SInt32 oldValue, SInt32 newValue)
+{
+    debug(DBGCLASS"[%p]::passTroughtChanged(%p, %d, %d)\n", this, muteControl, oldValue, newValue);
+    
+    // Add input mute change code here
+    
+    if(muteControl && hw && epilog_pgm!=-1)
+    {
+        
+    }
+    return kIOReturnSuccess;
+}
+
+IOReturn kXAudioDevice::gainChangeHandler(IOService *target, IOAudioControl *gainControl, SInt32 oldValue, SInt32 newValue)
+{
+    IOReturn result = kIOReturnBadArgument;
+    kXAudioDevice *audioDevice;
+    
+    audioDevice = (kXAudioDevice *)target;
+    if (audioDevice) {
+        result = audioDevice->gainChanged(gainControl, oldValue, newValue);
+    }
+    
+    return result;
+}
+
+IOReturn kXAudioDevice::gainChanged(IOAudioControl *gainControl, SInt32 oldValue, SInt32 newValue)
+{
+    debug(DBGCLASS"[%p]::gainChanged(%p, %d, %d)\n", this, gainControl, oldValue, newValue);
+    
+    if (gainControl) {
+        debug("\t-> Channel %d\n", gainControl->getChannelID());
+    }
+    if (gainControl && hw && epilog_pgm!=-1)
+    {
+        
+        int id=gainControl->getChannelID();
+
+        if (id == 0){
+        dword vol;
+        
+        if(newValue==0){
+            vol=0x0;}
+        else{
+            vol=(dword)((newValue+1)*(-32768));}
+        
+        in_volume[0] = vol;
+        in_volume[1] = vol;
+        
+        kx_set_dsp_register(hw,epilog_pgm,"RecLVol",is_input_muted?0x0:in_volume[0]);
+        kx_set_dsp_register(hw,epilog_pgm,"RecRVol",is_input_muted?0x0:in_volume[1]);
+        }else{
+            dword vol;
+            
+            if(newValue==0)
+                vol=0x0;
+            else
+                vol=(dword)((newValue+1)*0x2000);
+            
+            kx_set_dsp_register(hw,epilog_pgm,&"RecIn"[(char)id],vol);
+            debug("input volume change called\n");
+        }
+        
+        // Add hardware gain change code here
+    }else{
+        debug("Something wrong when changing input volume\n");
+    }
+    return kIOReturnSuccess;
+}
 
 #define prep_in(type) type *in; in=(type *)(((dword *)inStruct+1));
 #define prep_out(type) type *out; out=(type *)(((dword *)outStruct+1));
@@ -900,9 +1286,9 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
             if(in->reg==KX_HW_KX3D)
             {
                 /*
-                out->reg=0;
-                if(adapter && adapter->Wave[0])
-                    out->val=adapter->Wave[0]->kx3d_compat;
+                 out->reg=0;
+                 if(adapter && adapter->Wave[0])
+                 out->val=adapter->Wave[0]->kx3d_compat;
                  */
                 return kIOReturnBadArgument;
             }
@@ -910,9 +1296,9 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
                 if(in->reg==KX_HW_8PS)
                 {
                     /*
-                    out->reg=0;
-                    if(adapter && adapter->Wave[0])
-                        out->val=adapter->Wave[0]->kx3d_sp8ps;
+                     out->reg=0;
+                     if(adapter && adapter->Wave[0])
+                     out->val=adapter->Wave[0]->kx3d_sp8ps;
                      */
                     return kIOReturnBadArgument;
                 }
@@ -926,8 +1312,8 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
             if(in->reg==KX_HW_KX3D)
             {
                 /*
-                if(adapter && adapter->Wave[0])
-                    adapter->Wave[0]->kx3d_compat=in->val;
+                 if(adapter && adapter->Wave[0])
+                 adapter->Wave[0]->kx3d_compat=in->val;
                  */
                 return kIOReturnBadArgument;
             }
@@ -936,8 +1322,8 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
                 if(in->reg==KX_HW_8PS)
                 {
                     /*
-                    if(adapter && adapter->Wave[0])
-                        adapter->Wave[0]->kx3d_sp8ps=in->val;
+                     if(adapter && adapter->Wave[0])
+                     adapter->Wave[0]->kx3d_sp8ps=in->val;
                      */
                     return kIOReturnBadArgument;
                 }
@@ -981,22 +1367,22 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
             break;
         case KX_PROP_FPGA_FIRMWARE+KX_PROP_GET:
         {
-                prep_in(fpga_firmware_property);
+            prep_in(fpga_firmware_property);
             
-                if(inStructSize>=4 && inStructSize>=in->size+sizeof(dword))
+            if(inStructSize>=4 && inStructSize>=in->size+sizeof(dword))
+            {
+                if(kx_upload_fpga_firmware(hw,(byte *)((&in->size)+1),in->size))
                 {
-                    if(kx_upload_fpga_firmware(hw,(byte *)((&in->size)+1),in->size))
-                    {
-                        debug(DBGCLASS"::property: !! fpga firmware not uploaded\n");
-                        return kIOReturnBadArgument;
-                    }
-                    debug(DBGCLASS"::property: fpga firmware uploaded - %d, %d\n",(int)inStructSize,in->size);
-                }
-                else
-                {
-                    debug(DBGCLASS"::property: !! Firmware instance too small [2]\n");
+                    debug(DBGCLASS"::property: !! fpga firmware not uploaded\n");
                     return kIOReturnBadArgument;
                 }
+                debug(DBGCLASS"::property: fpga firmware uploaded - %d, %d\n",(int)inStructSize,in->size);
+            }
+            else
+            {
+                debug(DBGCLASS"::property: !! Firmware instance too small [2]\n");
+                return kIOReturnBadArgument;
+            }
         }
             break;
         case KX_PROP_FPGA_FW_START+KX_PROP_GET:
@@ -1061,11 +1447,11 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
                     if(fpga_fw_offset==fpga_fw_size)
                     {
                         /*
-                        dword crc=0x0055aa55;
-                        for(int i=0;i<fpga_fw_size;i++)
-                            crc=crc+fpga_fw[i]*i;
-                        debug("=== ALL DONE, OK - %d; crc=%08x\n",fpga_fw_size,crc);
-                        */
+                         dword crc=0x0055aa55;
+                         for(int i=0;i<fpga_fw_size;i++)
+                         crc=crc+fpga_fw[i]*i;
+                         debug("=== ALL DONE, OK - %d; crc=%08x\n",fpga_fw_size,crc);
+                         */
                         int ret=0;
                         
                         if(kx_upload_fpga_firmware(hw,fpga_fw,fpga_fw_size))
@@ -1209,9 +1595,9 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
                 case KX_AC3_BUFFERS:
                     hw->cb.ac3_buffers=in->val; break;
                 case KX_GSIF_BUFFER:
-                        return kIOReturnBadArgument;
-                }
+                    return kIOReturnBadArgument;
             }
+        }
             break;
         case KX_PROP_GET_BUFFERS+KX_PROP_GET:
         {
@@ -1377,7 +1763,7 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
                 debug(DBGCLASS"::property: Microcode reset request\n");
                 kx_dsp_reset(hw);
                 out->reg=0;
-            } 
+            }
             else { debug(DBGCLASS"::property: !!! Bad parameter for reset\n"); out->reg=(dword)-1; }
         }
             break;
@@ -1442,9 +1828,9 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
                 
                 /*
                  // FIXME
-                    adapter->Wave[0]->kx3d_compat=0;
-                    adapter->Wave[0]->kx3d_sp8ps=0;
-                */
+                 adapter->Wave[0]->kx3d_compat=0;
+                 adapter->Wave[0]->kx3d_sp8ps=0;
+                 */
             }
         }
             break;
@@ -1572,12 +1958,12 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
                 return kIOReturnBadArgument;
             
             /*
-            debug(DBGCLASS"::property: microcode: %d %d %d %d %d\n",
-                  offsetof(dsp_microcode,list),
-                  offsetof(dsp_microcode,pgm),
-                  offsetof(dsp_microcode,name),
-                  offsetof(dsp_microcode,guid),
-                  offsetof(dsp_microcode,info_size));
+             debug(DBGCLASS"::property: microcode: %d %d %d %d %d\n",
+             offsetof(dsp_microcode,list),
+             offsetof(dsp_microcode,pgm),
+             offsetof(dsp_microcode,name),
+             offsetof(dsp_microcode,guid),
+             offsetof(dsp_microcode,info_size));
              */
         }
             break;
@@ -1720,11 +2106,11 @@ IOReturn kXAudioDevice::user_request(const void* inStruct, void* outStruct,uint3
                 dsp_register_info *info=(dsp_register_info *)&m[info_off];
                 
                 if((int)(inStructSize-4)!=(last_off+1)*4)
-                { 
+                {
                     debug(DBGCLASS"::property: !!! get_microcode() instance too little (%d) (%d)\n",
                           inStructSize-4,
                           (last_off+1)*4);
-                    return kIOReturnBadArgument; 
+                    return kIOReturnBadArgument;
                 }
                 if(m[last_off]!=GET_MICROCODE_MAGIC)
                 {
@@ -1934,7 +2320,7 @@ IOReturn kXAudioDevice::performPowerStateChange(IOAudioDevicePowerState oldPower
     if(newPowerState==kIOAudioDeviceSleep && (oldPowerState==kIOAudioDeviceActive || oldPowerState==kIOAudioDeviceIdle))
     {
         kx_set_power_state(hw,KX_POWER_SUSPEND);
-    }       
+    }
     
     IOReturn result = super::performPowerStateChange (oldPowerState, newPowerState, microsecondsUntilComplete);
     

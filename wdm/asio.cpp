@@ -438,7 +438,7 @@ int CASIO::asio_alloc_input(int chn,size_t size,void **addr,int rate,int bps)
          asio_hw->mtr_buffer_size=size*cnt;
         }
 
-        kx_mtrec_select(asio_hw,fxwc);
+        kx_mtrec_select(asio_hw,fxwc, 0);
 
         ins[chn].kernel_addr=tmp_addr;
         ins[chn].user_addr=*addr;
@@ -602,7 +602,7 @@ int CASIO::asio_free_input(int chn)
                  asio_hw->mtr_buffer_size=size*cnt;
                 }
 
-                kx_mtrec_select(asio_hw,fxwc);
+                kx_mtrec_select(asio_hw,fxwc, 0);
                 debug(DASIO,"asio: after free_output (chn=%d); total#=%d req. memsize=%d fxwc=%x\n",chn,cnt,asio_hw->mtr_buffer_size,fxwc);
 
                 return 0; // ok

@@ -18,7 +18,6 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-
 #include "kx.h"
 
 #include "frname.cpp"
@@ -43,10 +42,28 @@ static inline void itoax(char *str,dword val)
  *str=itoax_s((val&0xf)); str++;
 }
 
+KX_API(bool,kx_set_debugging(bool value)){
+    if (value == true){
+    #ifndef DEBUGGING
+        #define DEBUGGING
+    #endif
+    }else{
+    #ifdef DEBUGGING
+        #undef DEBUGGING
+    #endif
+    
+    }
+    return false;
+};
+
 // bus=0xff for autoscan PCI
 int pci_init(kx_hw *hw);
 int pci_init(kx_hw *hw)
 {
+    
+  kx_set_debugging(hw->enableOriginalDebugging);
+    
+    
  if((hw->cb.io_base==0)||(hw->standalone)) // do autoscan
  {
  word wdata;
@@ -145,18 +162,65 @@ FOUND: // bus,dev,func contain right values
  hw->drum_channel=10;
 
  char tmp_str[KX_MAX_STRING];
- kx_get_friendly_name(hw->pci_device,hw->pci_subsys,hw->pci_chiprev,tmp_str,
+    int ret;
+    /*ret = kx_get_friendly_name(hw->pci_device,hw->pci_subsys,hw->pci_chiprev,tmp_str,
                 hw->is_51,hw->has_surdac,
-        hw->is_aps,hw->is_10k2,hw->is_a2,hw->is_a2ex,hw->is_k8,hw->is_a4,hw->is_edsp,
-        hw->have_ac97,hw->lack_ac97,hw->is_zsnb,hw->is_cardbus);
+        hw->is_aps,hw->is_10k2,hw->is_10k3,hw->is_a2,hw->is_a2ex,hw->is_k8,hw->is_a4,hw->is_edsp,
+        hw->have_ac97,hw->lack_ac97,hw->is_zsnb,hw->is_cardbus,hw->busName);*/
+    
+    ret = kx_get_friendly_name_from_kx_object(*hw, *tmp_str);
 
+    if (ret == -1){
+        debug(DLIB,"Initializing an unknown card [%s][%s]\n", hw->pci_dev,hw->pci_subsys);
+    }
+    
  hw->can_k8_passthru=hw->is_k8;
-
- char *p=&tmp_str[strlen(tmp_str)];
- *p=' '; p++; *p='['; p++;
- itoax(p,hw->port); p+=4;
- *p=']'; p++; *p=0;
-
+    
+    if (hw->nameDebug == true){
+        if (hw->is_10k2 || hw->is_10k3 || hw->is_k8 || hw->is_a4){
+            if (hw->is_10k3 || hw->is_a4){
+                strncat(tmp_str, " CA10300", KX_MAX_STRING);
+            }else if (hw->is_k8){
+                strncat(tmp_str, " 10k8", KX_MAX_STRING);
+            }else if (hw->is_10k2){
+                strncat(tmp_str, " 10k2", KX_MAX_STRING);
+            }
+        }else{
+            strncat(tmp_str, " 10k1", KX_MAX_STRING);
+        }
+        
+        char *p=&tmp_str[strlen(tmp_str)];
+        *p=' '; p++; *p='['; p++;
+        itoax(p,hw->port); p+=4;
+        *p=']'; p++; *p=0;
+    }
+    
+    if (hw->showBusInName == true){
+    char bus_info[KX_MAX_STRING];
+    switch (hw->busName) {
+        case PCI:
+            strncpy(bus_info, " (PCI)", KX_MAX_STRING);
+            break;
+        case PCIExpress:
+            strncpy(bus_info, " (PCI Express)", KX_MAX_STRING);
+            break;
+        case NoteBook:
+            strncpy(bus_info, " (Notebook)", KX_MAX_STRING);
+            break;
+        case USB:
+            strncpy(bus_info, " (USB)", KX_MAX_STRING);
+            break;
+        case other:
+            strncpy(bus_info, " (Other bus)", KX_MAX_STRING);
+            break;
+        default:
+            strncpy(bus_info, " (Unknown)", KX_MAX_STRING);
+            break;
+    }
+    
+    strncat(tmp_str, bus_info, KX_MAX_STRING);
+        
+    }
  strncpy(hw->card_name,tmp_str,KX_MAX_STRING);
  debug(DLIB,"card name: '%s'\n",hw->card_name);
 
@@ -553,6 +617,235 @@ OK:
  return res;
 }
 
+KX_API(int,kx_init_ni(kx_hw &hw_,kx_callbacks *cb,int standalone, int ret_))
+{
+    if (ret_ == 0){
+    /*kx_hw *hw=NULL;
+    (cb->malloc_func)(cb->call_with,sizeof(kx_hw),(void **)&hw,KX_NONPAGED);
+    if(hw==NULL)
+        return -2;
+    
+    my_memset(hw,0,sizeof(kx_hw));
+    
+    *hw_=hw;*/
+    
+    kx_hw* hw = &hw_;
+    
+    hw->standalone=(byte)standalone;
+    my_memcpy(&hw->cb,cb,sizeof(kx_callbacks));
+    
+    my_strncpy(hw->kx_version,KX_DRIVER_VERSION_STR,KX_MAX_STRING);
+    my_strncpy(hw->kx_date,__DATE__" "__TIME__,KX_MAX_STRING);
+    
+    my_strncpy(hw->kx_driver,"kX Audio Driver"
+#ifndef KX_DEBUG
+               " (Release)",
+#else
+               " (Debug)",
+#endif
+               KX_MAX_STRING
+               );
+    
+    hw->initialized=0;
+    
+    hw->power_state=KX_POWER_NORMAL;
+    
+    hw->mtr_buffer_size=0;
+    
+    hw->is_a2ex=0;
+    hw->is_a2=0;
+    hw->have_ac97=0; // assume autodetect
+    hw->lack_ac97=0;
+    hw->spdif_decode=0;
+    hw->spdif_recording=0;
+    
+    hw->ext_flags=0;
+    
+    hw->synth_compat=KX_SYNTH_DEFAULTS;
+    
+    hw->irq_pending=0;
+    
+    hw->cur_asio_in_bps=0;
+    hw->card_frequency=48000;
+    
+    int i;
+    for(i=0;i<MAX_MPU_DEVICES;i++)
+    {
+        hw->uart_out_tail[i]=0;
+        hw->uart_out_head[i]=0;
+    }
+    
+    debug(DLIB,"--- kX Software Abstraction Level Library init ---\n%s\nversion: %s\n"KX_COPYRIGHT_STR"\nLibrary Compiled "__DATE__", "__TIME__"\n\n",
+          hw->kx_driver,
+          KX_DRIVER_VERSION_STR);
+    
+    // Set up the initial settings
+    hw->ecard.spdif1=KX_EC_SOURCE_EDRIVE;
+    hw->ecard.spdif0=KX_EC_SOURCE_ECARD;
+    hw->ecard.adc_gain=EC_DEFAULT_ADC_GAIN;
+    hw->ecard.control_bits=EC_RAW_RUN_MODE|(dword)(hw->ecard.spdif1<<KX_EC_SPDIF1_SHIFT)|(dword)(hw->ecard.spdif0<<KX_EC_SPDIF0_SHIFT);
+    
+    my_memset(&hw->sys_timer,0,sizeof(kx_timer));
+    hw->sys_timer.status=TIMER_UNINSTALLED;
+    
+    my_memset(&hw->p16v_pb_timer,0,sizeof(kx_timer));
+    hw->p16v_pb_timer.status=TIMER_UNINSTALLED;
+    
+    my_memset(&hw->p16v_rec_timer,0,sizeof(kx_timer));
+    hw->p16v_rec_timer.status=TIMER_UNINSTALLED;
+    
+    my_memset(hw->p16v_volumes,0,sizeof(hw->p16v_volumes));
+    
+    hw->p16v_pb_opened=0;
+    hw->p16v_rec_opened=0;
+    
+    my_memset(&hw->ac3_pt_state,0,sizeof(kx_ac3_passthru));
+    
+    kx_spin_lock_init(hw,&hw->hw_lock,"hw");
+    kx_spin_lock_init(hw,&hw->timer_lock,"timer");
+    kx_spin_lock_init(hw,&hw->uartout_lock,"uart");
+    
+    for(i=0;i<MAX_MPU_DEVICES;i++)
+        kx_spin_lock_init(hw,&hw->mpu_lock[i],"mpu");
+    
+    kx_spin_lock_init(hw,&hw->k_lock,"generic");
+    kx_spin_lock_init(hw,&hw->pt_lock,"pt");
+    kx_spin_lock_init(hw,&hw->ac97_lock,"ac97");
+    kx_spin_lock_init(hw,&hw->dsp_lock,"dsp");
+    kx_spin_lock_init(hw,&hw->sf_lock,"sf");
+    
+    // voice init
+    my_memset(hw->voicetable,0,sizeof(hw->voicetable));
+    hw->last_voice=0;
+    
+    for(i = 0; i < KX_NUMBER_OF_VOICES; i++)
+    {
+        hw->voicetable[i].usage = VOICE_USAGE_FREE;
+        hw->voicetable[i].asio_channel = 0xffffffff;
+    }
+    
+    for(i = 0; i < KX_NUMBER_OF_REC_VOICES; i++)
+    {
+        hw->rec_voicetable[i].usage = VOICE_USAGE_FREE;
+    }
+    
+    hw->midi[0]=NULL;
+    hw->midi[1]=NULL;
+    
+    hw->pt_spdif=0;
+    
+    hw->sys_timer.timer_func=system_timer_func;
+    hw->sys_timer.data=hw;
+    
+    hw->p16v_pb_timer.timer_func=hw->cb.notify_func;
+    hw->p16v_pb_timer.data=0;
+    
+    hw->p16v_rec_timer.timer_func=hw->cb.notify_func;
+    hw->p16v_rec_timer.data=0;
+    
+    memset(hw->asio_inputs,0,sizeof(hw->asio_inputs));
+    
+    memset(&hw->asio_notification_krnl,0,sizeof(hw->asio_notification_krnl));
+    
+    hw->asio_notification_krnl.pb_buf=-1;
+    hw->asio_notification_krnl.rec_buf=-1;
+    hw->asio_notification_krnl.toggle=-1;
+    hw->asio_notification_krnl.asio_method=0;
+    hw->asio_notification_krnl.n_voice=-1;
+    hw->asio_notification_krnl.semi_buff=0;
+    hw->asio_notification_krnl.active=0;
+    hw->asio_notification_krnl.cur_pos=0;
+    hw->asio_notification_krnl.kevent=0;
+    
+    int res=kx_pci_buffers_init(hw);
+    
+    if(!res)
+    {
+        kx_soundfont_init(hw);
+        
+        res=pci_init(hw);
+        
+        // inital swap set-up
+#if !defined(__APPLE__) && !defined(__MACH__) // MacOSX
+        if(!hw->lack_ac97)
+            hw->dsp_flags=KX_DSP_SWAP_REAR;
+        else
+            hw->dsp_flags=0;
+#endif
+        
+        if(!res)
+        {
+            // this should be after pci_init(), but before hal_init()
+            // this should run in 'standalone' mode
+            if(hw->is_10k2)
+            {
+                hw->opcode_shift=E10K2_OP_SHIFT_LOW;
+                hw->high_operand_shift=E10K2_OP_SHIFT_HI;
+                hw->first_instruction=E10K2_MICROCODE_BASE;
+                hw->microcode_size=E10K2_MAX_INSTRUCTIONS;
+            }
+            else
+            {
+                hw->opcode_shift=E10K1_OP_SHIFT_LOW;
+                hw->high_operand_shift=E10K1_OP_SHIFT_HI;
+                hw->first_instruction=E10K1_MICROCODE_BASE;
+                hw->microcode_size=E10K1_MAX_INSTRUCTIONS;
+            }
+            
+            if(standalone)
+                goto OK;
+            
+            res=kx_bufmgr_init(hw);
+            if(!res)
+            {
+                res=kx_timer_init(hw);
+                if(!res)
+                {
+                    res=kx_hal_init(hw);
+                    if(!res)
+                    {
+                        goto OK;
+                    }
+                    kx_timer_close(hw);
+                    kx_bufmgr_close(hw);
+                    debug(DLIB,"!! HAL initialization failed\n");
+                }
+                kx_bufmgr_close(hw);
+                debug(DLIB,"!!! timer initialization failed\n");
+            }
+            else
+                debug(DLIB,"!!! bufmgr initialization failed\n");
+        }
+        else
+            debug(DLIB,"!!! PCI init failed\n");
+        
+        kx_pci_buffers_close(hw);
+    }
+    
+OK:
+    if(res)
+        return res;
+    
+    kx_midi_set_volume(hw,0,0x0);
+    kx_midi_set_volume(hw,1,0x0);
+    
+    if((!hw->is_aps)&&(!hw->is_10k2)&&!standalone&&hw->have_ac97) // enable master volume (note: DOO)
+        kx_ac97write(hw,AC97_REG_MASTER_VOL,0x0);
+    
+    if(hw->is_edsp)
+        hw->gp_ins=0xff;
+    else
+        hw->gp_ins=kx_get_gp_inputs(hw);
+    
+    debug(DLIB,"--- Library init completed ---\n");
+    
+    return res;
+        
+    }else{
+        return ret_;
+    }
+}
+
 KX_API(int, kx_close(kx_hw **hw_))
 {
  kx_hw *hw=*hw_;
@@ -887,7 +1180,7 @@ KX_API(int,kx_get_device_caps(kx_hw *hw,kx_caps *caps,int *sz))
 #define DEFAULT_TANKMEM_SIZE        (256*1024)
 
 // std
-#define DEFAULT_STD_DMA_BUFFER      (9600) // changed to 9600 for 3553; used to be: (4*2088) // from Win Drivers 2088 (0x828) samples
+#define DEFAULT_STD_DMA_BUFFER      (4*2088) // from Win Drivers 2088 (0x828) samples
 
 // rec
 #define DEFAULT_STD_REC_BUFFER      (16384)

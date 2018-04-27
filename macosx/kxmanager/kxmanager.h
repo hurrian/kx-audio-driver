@@ -1,7 +1,7 @@
 //  kX Project audio driver for Mac OS X
 //  Created by Eugene Gavrilov.
 //	Copyright 2008-2014 Eugene Gavrilov. All rights reserved.
-//  https://github.com/kxproject/ (previously www.kxproject.com)
+//  www.kxproject.com
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -21,6 +21,7 @@
 
 
 #import <Cocoa/Cocoa.h>
+#import "kx.h"
 
 
 @interface kxmanager : NSObject {

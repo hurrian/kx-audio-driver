@@ -1,7 +1,7 @@
 //  kX Project audio driver for Mac OS X
 //  Created by Eugene Gavrilov.
 //	Copyright 2008-2014 Eugene Gavrilov. All rights reserved.
-//  https://github.com/kxproject/ (previously www.kxproject.com)
+//  www.kxproject.com
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -134,7 +134,12 @@ IOReturn kXUserClient::externalMethod(uint32_t selector, IOExternalMethodArgumen
 // initWithTask is called as a result of the user process calling IOServiceOpen.
 bool kXUserClient::initWithTask( task_t owningTask, void * securityID, UInt32 type,  OSDictionary * properties )
 {
-    // debug(DBGCLASS"[%p]::initWithTask(type %x)\n", this, (unsigned)type);
+    debug(DBGCLASS"[%p]::initWithTask(type %x)\n", this, (unsigned)type);
+    
+    _owningTask = &owningTask;
+    _securityID = &securityID;
+    _type = type;
+    _properties = properties;
     
 	device = NULL;
 	
@@ -144,15 +149,53 @@ bool kXUserClient::initWithTask( task_t owningTask, void * securityID, UInt32 ty
 // start is called after initWithTask as a result of the user process calling IOServiceOpen.
 bool kXUserClient::start( IOService * provider )
 {
-    // debug(DBGCLASS"[%p]::start\n",this);
+    debug(DBGCLASS"[%p]::start\n",this);
 	
-    if( !super::start( provider ))
+    if(!super::start( provider ))
         return( false );
 	
+    //if (!device){
     // Our provider is the kXAudioDevice object.
-    assert( OSDynamicCast( kXAudioDevice, provider ));
-    device = (kXAudioDevice *) provider;
-	
+    
+    /*
+    device = OSDynamicCast( kXAudioDevice, provider );
+    
+    assert(device);
+    */
+    
+    /*
+    assert(OSDynamicCast( kXAudioDevice, provider ));
+    device = (kXAudioDevice *)provider;
+    */
+    
+    device = OSDynamicCast( kXAudioDevice, provider );
+    
+    assert(device);
+    
+    device->retain();
+     
+    if (!device){
+        return( false );
+    }
+    
+    
+    
+    /*}else{
+        kXUserClient *client;
+        client = new kXUserClient;
+        
+        if (!client->initWithTask(*_owningTask, _securityID, _type, _properties )){
+            stop(provider);
+            return false;
+        }
+        
+        if (!client->start(provider)){
+            stop(provider);
+            return false;
+        }
+        
+    }*/
+    
 	// It's important not to call super::start if some previous condition
 	// (like an invalid provider) would cause this function to return false. 
 	// I/O Kit won't call stop on an object if its start function returned false.
@@ -246,7 +289,7 @@ IOReturn kXUserClient::openUserClient(void)
 {
     IOReturn	result = kIOReturnSuccess;
 	
-	// debug(DBGCLASS"[%p]::openUserClient()\n", this);
+	debug(DBGCLASS"[%p]::openUserClient()\n", this);
     
     if (device == NULL || isInactive())
 	{

@@ -12,6 +12,8 @@ rem re-set current folder if called as administrator
 cd /d %~dp0
 
 if %BUILD_TYPE%.==. set BUILD_TYPE=FRE
+rem timestamp signed executables (slow, since requires internet connection)
+if %BUILD_TYPE%.==FRE. set TIMESTAMP_SIGN=YES
 
 echo ===================================================
 echo            Generate x86 and x64 drivers

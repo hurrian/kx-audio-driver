@@ -78,6 +78,28 @@
  #define debug (void)
 #endif
 
+//#define GENERAL_DEBUG
+//#define DEBUGGING
+//#define ORIGINAL
+
+//#define GENERAL_DEBUG
+
+/*#ifdef GENERAL_DEBUG
+    #define NAME_DEBUG
+    #define USE_BUS_IN_NAME
+#endif*/
+
+
+enum CardBus{
+    PCI = 0,
+    PCIExpress = 1,
+    USB = 2,
+    NoteBook = 3,
+    other = 4
+};
+
+
+
 enum kx_cpu_cache_type_t
 {
  KX_NONCACHED,
@@ -413,7 +435,16 @@ struct kx_hw
     char kx_version[KX_MAX_STRING];
     char kx_driver[KX_MAX_STRING];
     char kx_date[KX_MAX_STRING];
-
+    
+    bool nameDebug = false;
+    bool showBusInName = false;
+    bool testImputs = false;
+    
+    bool enableOriginalDebugging = false;
+    bool disableFixes = false;
+    
+    int defaultSampleRate = 44100;
+    
     // PCI info
     byte pci_bus;   // used only by spy.exe:
     byte pci_dev;
@@ -424,6 +455,7 @@ struct kx_hw
     byte  pci_chiprev;
 
     byte is_10k2;       // dev: 0004
+    byte is_10k3;
     byte is_aps;        //    model match: e-mu APS
     byte is_a2ex;       // a2 platinum ex
     byte is_a2;         // dev: 0004 rev: 4
@@ -436,6 +468,8 @@ struct kx_hw
     byte is_bad_sb22x;
     byte is_a4;         // ??
 
+    CardBus busName;
+    
     char card_name[KX_MAX_STRING];
     char db_name[KX_MAX_STRING];
     dword hcfg_k1,hcfg_k2;
@@ -619,9 +653,12 @@ extern const kx_ac97_registers_t kx_ac97_registers[];
 #endif
 
 KX_API(int,kx_init(kx_hw **hw,kx_callbacks *cb,int standalone));
+KX_API(int,kx_init_ni(kx_hw &hw,kx_callbacks *cb,int standalone, int ret_));
 KX_API(int,kx_defaults(kx_hw *hw,kx_callbacks *cb));
 KX_API(int,kx_close(kx_hw **));
 KX_API(int,kx_getstring(kx_hw *,int what,char *buff));
+
+KX_API(bool,kx_set_debugging(bool value));
 
 KX_API(dword,kx_getdword(kx_hw *hw,int what,dword *ret)); // returns 0 on success
 
@@ -733,8 +770,10 @@ KX_API(int,kx_allocate_multichannel(kx_hw *hw,int bps,int rate,int flag,kx_voice
 // kX Multitrack device
 // --------------------
 KX_API(int,kx_mtrec_start(kx_hw *hw));
+KX_API(int,kx_mtrec_start_from_actual_buffer(kx_hw *&hw, int channel));
 KX_API(int,kx_mtrec_stop(kx_hw *hw));
-KX_API(int,kx_mtrec_select(kx_hw *hw,dword flag,dword flag2=0)); // flag2-10k2 only
+KX_API(int,kx_mtrec_select(kx_hw *hw,dword flag,dword flag2=0));
+KX_API(int,kx_mtrec_select_whith_channel(kx_hw *hw,int channel,dword flag,dword flag2=0));// flag2-10k2 only
 
 // kX P16V/HQ device
 // -----------------

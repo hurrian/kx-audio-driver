@@ -1,7 +1,7 @@
 //  kX Project audio driver for Mac OS X
 //  Created by Eugene Gavrilov.
 //	Copyright 2008-2014 Eugene Gavrilov. All rights reserved.
-//  https://github.com/kxproject/ (previously www.kxproject.com)
+//  www.kxproject.com
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -37,6 +37,7 @@
 
 #undef debug
 #include "cedebug.h"
+//#include "math.h"
 
 #define super IOAudioDevice
 
@@ -191,12 +192,14 @@ int kXAudioDevice::debug_func(int where,const char *__format, ... )
 
 void kXAudioDevice::get_physical(kx_voice_buffer *buff,int offset,__int64 *physical)
 {
-	*physical=(__int64)((byte *)(buff->physical+offset));
+	*physical=(__int64)(buff->physical+offset);
 }
 
 void kXAudioDevice::save_fpu_state(kx_fpu_state *state)
 {
 	// fixme !!
+    
+    
 }
 
 void kXAudioDevice::rest_fpu_state(kx_fpu_state *state)
@@ -233,26 +236,24 @@ KX_API(void,kx_lock_release(kx_hw *hw, spinlock_t *lock, unsigned long *,const c
 	IORecursiveLockUnlock(lock->lock);
 }
 
+
 double kx_log10(register double _x_)
 {
-	// FIXME
-	return 0.0;
+    
+    return 0.0;
 }
 
 double kx_pow2(register double _y_)
 {
-	// fixme !!
 	return 0.0;
 }
 
 double kx_pow10(register double y)
 {
-	// fixme !!
 	return 0.0;
 }
 
 double kx_sqrt(register double y)
 {
-	// FIXME !!
 	return 0.0;
 }

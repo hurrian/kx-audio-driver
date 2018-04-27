@@ -7,5 +7,5 @@
 kxefx_skin: $(DONE)\kxefx.kxs
 
 $(DONE)\kxefx.kxs:
-	pkzip25 -add $(DONE)\kxefx.kxs -nozipextension *.* -exclude *.bat -exclude makefile.inc
+	pkzip25 -add $(DONE)\kxefx.kxs -nozipextension *.* -exclude *.bat
 	$(SAY) Generated kxefx.kxs...

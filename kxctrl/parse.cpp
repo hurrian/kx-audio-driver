@@ -1,6 +1,6 @@
 // kX kxctrl: parser
 // Copyright (c) Eugene Gavrilov, 2001-2008.
-//  https://github.com/kxproject/ (previously www.kxproject.com)
+// www.kxproject.com
 // All rights reserved
 
 /*

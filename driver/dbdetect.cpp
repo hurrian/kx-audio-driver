@@ -48,6 +48,7 @@ static byte buffer3[MAX_RESPONSE]=
 static byte buffer4[MAX_REQUEST]=
 { 0xf0,0x00,0x20,0x21,0x61,0x0,0x00,0x00,0x7f,0x0,0xf7 };
 
+//return a byte tha rapresents the inputs
 KX_API(byte,kx_get_gp_inputs(kx_hw *hw))
 {
  if(hw->is_edsp)

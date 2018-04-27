@@ -1,6 +1,6 @@
 // kX kxctrl utility
 // Copyright (c) Eugene Gavrilov, 2001-2008.
-//  https://github.com/kxproject/ (previously www.kxproject.com)
+// www.kxproject.com
 // All rights reserved
 
 /*
@@ -985,7 +985,7 @@ int process(int argc, char **argv)
 																							
 																							char tmp_name[KX_MAX_STRING+4];
 																							strncpy(tmp_name,name,sizeof(tmp_name));
-																							strncat(tmp_name,".da",sizeof(tmp_name)-strlen(tmp_name));
+																							strncat(tmp_name,".da",sizeof(tmp_name) - strlen(tmp_name) - 1);
 																							
 																							f=fopen(tmp_name,"wt");
 																							if(f)

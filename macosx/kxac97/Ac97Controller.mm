@@ -1,7 +1,7 @@
 //
 //  Ac97Controller.m
 //  kX AC97 control utility
-//  https://github.com/kxproject/ (previously www.kxproject.com)
+//  www.kxproject.com
 //
 //  Created by Dmitry P. Gorelov on 30.07.09.
 //  Copyright Dmitry Gorelov, 2009. All rights reserved.
@@ -196,5 +196,11 @@ IMPLEMENT_PAIR(adc, Adc, regRec, 0x0f, NO, AC97_REG_REC_GAIN)
     if (kx)
 		delete kx;
 }
+
+//when the close botton is pressed the application will quit
+-(void)viewDidDisappear{
+    [super viewDidDisappear];
+    [NSApp terminate:nil];
+};
 
 @end

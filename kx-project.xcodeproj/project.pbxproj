@@ -59,6 +59,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		C66E392E1E7625E700EDAC5F /* uninstall */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = uninstall; sourceTree = "<group>"; };
+		C66E392F1E7625F500EDAC5F /* simplecontrol.sh */ = {isa = PBXFileReference; lastKnownFileType = text.script.sh; path = simplecontrol.sh; sourceTree = "<group>"; };
 		E80BEEE0189AB1D400EA2DB7 /* license.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = license.txt; sourceTree = "<group>"; };
 		E80BEEE1189AB1D400EA2DB7 /* readme.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = readme.txt; sourceTree = "<group>"; };
 		E80BEEE3189AB1D400EA2DB7 /* 1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = 1.png; sourceTree = "<group>"; };
@@ -5869,7 +5871,9 @@
 				E89CA31B18882F75001C2E11 /* clean_ */,
 				E89CA31C18882F75001C2E11 /* COPYING */,
 				E89CA31D18882F75001C2E11 /* create */,
+				C66E392E1E7625E700EDAC5F /* uninstall */,
 				E89CA31E18882F75001C2E11 /* cycle */,
+				C66E392F1E7625F500EDAC5F /* simplecontrol.sh */,
 				E89CA31F18882F75001C2E11 /* install */,
 				E89CA32018882F75001C2E11 /* kext */,
 				E89CA32C18882F75001C2E11 /* kxac97 */,

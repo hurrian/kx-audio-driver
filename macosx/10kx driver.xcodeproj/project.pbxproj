@@ -12,7 +12,7 @@
 		17251D9E17063EEC006D7687 /* IOAudioBlitterLibDispatch.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 17251D9917063EEC006D7687 /* IOAudioBlitterLibDispatch.cpp */; };
 		17251D9F17063EEC006D7687 /* IOAudioBlitterLibDispatch.h in Headers */ = {isa = PBXBuildFile; fileRef = 17251D9A17063EEC006D7687 /* IOAudioBlitterLibDispatch.h */; };
 		17251DA017063EEC006D7687 /* IOAudioBlitterLibX86.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 17251D9B17063EEC006D7687 /* IOAudioBlitterLibX86.cpp */; };
-		17251DA2170640FB006D7687 /* kXAPI.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = E8A3E96E0E8F20FE005D3692 /* kXAPI.dylib */; };
+		17251DA2170640FB006D7687 /* kXAPI.dylib in CopyFiles */ = {isa = PBXBuildFile; fileRef = E8A3E96E0E8F20FE005D3692 /* kXAPI.dylib */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		44212C060DECB5BF00E06065 /* AudioDevice.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1A224C3FFF42367911CA2CB7 /* AudioDevice.cpp */; };
 		44212C070DECB5BF00E06065 /* AudioEngine.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 0117744F00710DAB7F000001 /* AudioEngine.cpp */; };
 		44212C080DECB5BF00E06065 /* Compat.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 449EE4590DE7A807000769A3 /* Compat.cpp */; };
@@ -2346,7 +2346,7 @@
 		089C1669FE841209C02AAC07 /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0460;
+				LastUpgradeCheck = 0820;
 				ORGANIZATIONNAME = "kX Project";
 			};
 			buildConfigurationList = E84281580B8E825C0042E2D2 /* Build configuration list for PBXProject "10kx driver" */;
@@ -2592,8 +2592,10 @@
 				);
 				INFOPLIST_FILE = kext/Info.plist;
 				KERNEL_MODULE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 10.9;
 				MODULE_IOKIT = YES;
 				MODULE_NAME = com.kXProject.driver.kXAudioDriver;
+				PRODUCT_BUNDLE_IDENTIFIER = "${MODULE_NAME}";
 				PRODUCT_NAME = kXAudioDriver;
 				WRAPPER_EXTENSION = kext;
 			};
@@ -2626,7 +2628,17 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ARCHS = "$(ARCHS_STANDARD_32_64_BIT)";
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_PREPROCESSOR_DEFINITIONS = "$(GCC_PREPROCESSOR_DEFINITIONS_QUOTED_1)";
 				GCC_PREPROCESSOR_DEFINITIONS_QUOTED_1 = "'DRIVER_VERSION=\"${MODULE_VERSION}\"'";
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -2645,7 +2657,8 @@
 				GCC_WARN_UNUSED_LABEL = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				INFOPLIST_PREPROCESS = YES;
-				MODULE_VERSION = 2.00b0;
+				MACOSX_DEPLOYMENT_TARGET = 10.9;
+				MODULE_VERSION = 2.00.b1;
 				SDKROOT = macosx;
 				USER_HEADER_SEARCH_PATHS = ../h;
 				ZERO_LINK = NO;
@@ -2666,6 +2679,7 @@
 			buildSettings = {
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = kxmanager/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kXProject.kXManager;
 				PRODUCT_NAME = "kX Manager";
 			};
 			name = Deployment;
@@ -2691,6 +2705,7 @@
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = kxac97/kxac97_Prefix.pch;
 				INFOPLIST_FILE = kxac97/Info.plist;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kxproject.ac97;
 				PRODUCT_NAME = "kX AC97";
 			};
 			name = Deployment;

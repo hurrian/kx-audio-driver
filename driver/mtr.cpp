@@ -21,6 +21,7 @@
 
 #include "kx.h"
 
+
 // kX Multitrack device
 // --------------------
 KX_API(int,kx_mtrec_start(kx_hw *hw))
@@ -81,10 +82,72 @@ KX_API(int,kx_mtrec_start(kx_hw *hw))
   return -1;
  }
 }
+//this one uses the actual buffer size instead
+KX_API(int,kx_mtrec_start_from_actual_buffer(kx_hw *&hw, int channel))
+{
+    if(hw->mtr_buffer.dma_handle)
+    {
+        for(int i=0;i<channel;i++){
+        kx_writeptr(hw,FXIDX,i,0);
+        kx_writeptr(hw,FXBA,i,hw->mtr_buffer.dma_handle);
+        dword sz;
+            
+        switch(hw->mtr_buffer.size)
+        {
+            case 384: sz=ADCBS_BUFSIZE_384; break;
+            case 448: sz=ADCBS_BUFSIZE_448; break;
+            case 512: sz=ADCBS_BUFSIZE_512; break;
+            case 640: sz=ADCBS_BUFSIZE_640; break;
+            case 768: sz=ADCBS_BUFSIZE_768; break;
+            case 896: sz=ADCBS_BUFSIZE_896; break;
+            case 1024: sz=ADCBS_BUFSIZE_1024; break;
+            case 1280: sz=ADCBS_BUFSIZE_1280; break;
+            case 1536: sz=ADCBS_BUFSIZE_1536; break;
+            case 1792: sz=ADCBS_BUFSIZE_1792; break;
+            case 2048: sz=ADCBS_BUFSIZE_2048; break;
+            case 2560: sz=ADCBS_BUFSIZE_2560; break;
+            case 3072: sz=ADCBS_BUFSIZE_3072; break;
+            case 3584: sz=ADCBS_BUFSIZE_3584; break;
+            case 4096: sz=ADCBS_BUFSIZE_4096; break;
+            case 5120: sz=ADCBS_BUFSIZE_5120; break;
+            case 6144: sz=ADCBS_BUFSIZE_6144; break;
+            case 7168: sz=ADCBS_BUFSIZE_7168; break;
+            case 8192: sz=ADCBS_BUFSIZE_8192; break;
+            case 10240: sz=ADCBS_BUFSIZE_10240; break;
+            case 12288: sz=ADCBS_BUFSIZE_12288; break;
+            case 14366: sz=ADCBS_BUFSIZE_14366; break;
+            case 16384: sz=ADCBS_BUFSIZE_16384; break;
+            case 20480: sz=ADCBS_BUFSIZE_20480; break;
+            case 24576: sz=ADCBS_BUFSIZE_24576; break;
+            case 28672: sz=ADCBS_BUFSIZE_28672; break;
+            case 32768: sz=ADCBS_BUFSIZE_32768; break;
+            case 40960: sz=ADCBS_BUFSIZE_40960; break;
+            case 49152: sz=ADCBS_BUFSIZE_49152; break;
+            case 57344: sz=ADCBS_BUFSIZE_57344; break;
+            default:
+            case 65536: sz=ADCBS_BUFSIZE_65536; break;
+        }
+        
+        kx_writeptr(hw,FXBS,i,sz);
+        
+        // enable IRQs
+        //kx_irq_enable(hw,INTE_EFXBUFENABLE);
+            debug(DASIO,"input channel allocation: %i %d", i, sz);
+        
+        }
+        debug(DASIO,"mtrec_start\n");
+        return 0;
+    }
+    else
+    {
+        debug(DLIB,"!!! mtrec_start: invalid call\n");
+        return -1;
+    }
+}
 
 KX_API(int,kx_mtrec_stop(kx_hw *hw))
 {
- kx_writeptr(hw,FXBS,0,0);
+    kx_writeptr(hw,FXBS,0,0);
 
  // disable IRQs
  kx_irq_disable(hw,INTE_EFXBUFENABLE);
@@ -97,7 +160,7 @@ KX_API(int,kx_mtrec_select(kx_hw *hw,dword flag,dword flag2)) // flag2-10k2 only
 {
  if(hw->is_10k2)
  {
-  kx_writeptr(hw,FXWCL,0,/*flag2*/0); // in general, it is ignored: FXBuses are not recorded
+  kx_writeptr(hw,FXWCL,0,flag2); // in general, it is ignored: FXBuses are not recorded
   kx_writeptr(hw,FXWCH,0,flag);  // temporary buses ARE recorded
  }
  else
@@ -105,4 +168,18 @@ KX_API(int,kx_mtrec_select(kx_hw *hw,dword flag,dword flag2)) // flag2-10k2 only
   kx_writeptr(hw,FXWC_K1,0,(flag&0xffff)<<16); // don't know
  }
  return 0;
+}
+//this function uses the channel too
+KX_API(int,kx_mtrec_select_whith_channel(kx_hw *hw,int channel,dword flag,dword flag2)) // flag2-10k2 only
+{
+    if(hw->is_10k2)
+    {
+        kx_writeptr(hw,FXWCL,channel,/*flag2*/0); // in general, it is ignored: FXBuses are not recorded
+        kx_writeptr(hw,FXWCH,channel,flag);  // temporary buses ARE recorded
+    }
+    else
+    {
+        kx_writeptr(hw,FXWC_K1,channel,(flag&0xffff)<<16); // don't know
+    }
+    return 0;
 }

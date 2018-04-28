@@ -77,7 +77,7 @@ bool kXAudioDevice::initHardware(IOService *provider)
     
     char tmp[16];
     
-    if (PE_parse_boot_argn("-kx_disable", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxdisable", tmp, sizeof(tmp))){
+    if (PE_parse_boot_argn("-kx_disable", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxdisable", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxoff", tmp, sizeof(tmp))){
         debug(DBGCLASS"[%p] Driver disabled by disable boot arg\n",this);
         return false;
     }
@@ -270,6 +270,7 @@ bool kXAudioDevice::initHardware(IOService *provider)
         hw->testImputs = false;
     }
     
+    /*
     if (PE_parse_boot_argn("-kx_exp_deb_o", tmp, sizeof(tmp))){
         hw->enableOriginalDebugging = true;
         
@@ -278,9 +279,11 @@ bool kXAudioDevice::initHardware(IOService *provider)
     }else{
         hw->enableOriginalDebugging = false;
     }
+    */
     
     if (PE_parse_boot_argn("-kx_original", tmp, sizeof(tmp)) || PE_parse_boot_argn("-kxoriginal", tmp, sizeof(tmp))){
         hw->disableFixes = true;
+        hw->testImputs = false;
         
         hw->defaultSampleRate = 48000;
         

@@ -547,27 +547,33 @@ IOAudioStream *kXAudioEngine::createNewAudioStream(int chn,IOAudioStreamDirectio
             //rate.whole = sampling_rate;
             //audioStream->addAvailableFormat(&format, &rate, &rate);
             
-#define N_FREQUNCYES 17 //18
+#define N_FREQUNCYES 18
             
-            //frequencyes higher than 48khz must be added at the beginning of the array and then the N_FREQUENCYES macro must be changed to make the new size of the array to be working
+            //frequencyes higher than 48khz must be added at the beginning of the array and then the N_FREQUENCYES macro must be changed to make the new size of the array to be working, also the order is not important for mac since it does reorder the sample rates for us
             if (!hw->disableFixes){
-                int supportedRates[N_FREQUNCYES] = { 64000, 88200, 96000, 176400, /*192000,*/ 8000, 9600, 11025, 12000, 16000, 18900, 22050, 24000, 32000, 37800, 44056, 44100, 48000};
+                int supportedRates[N_FREQUNCYES] = { 64000, 88200, 96000, 176400, 192000, 8000, 9600, 11025, 12000, 16000, 18900, 22050, 24000, 32000, 37800, 44056, 44100, 48000};
+                
+                if (!hw->testImputs){
+                    supportedRates[4] = 0;
+                }
                 
                 if (!hw->is_10k2){
-                    supportedRates[0] = 8000;
-                    supportedRates[1] =  8000;
-                    supportedRates[2] =  8000;
-                    supportedRates[3] =  8000;
-                    //supportedRates[4] =  8000;
+                    supportedRates[0] = 0;
+                    supportedRates[1] =  0;
+                    supportedRates[2] =  0;
+                    supportedRates[3] =  0;
+                    supportedRates[4] =  0;
                 }
                 
                 for (int i=0; i<N_FREQUNCYES; i++){
-                    IOAudioSampleRate optRate;
+                    if (supportedRates[i] > 100){
+                        IOAudioSampleRate optRate;
                     
-                    optRate.fraction = 0;
-                    optRate.whole = supportedRates[i];
+                        optRate.fraction = 0;
+                        optRate.whole = supportedRates[i];
                     
-                    audioStream->addAvailableFormat(&format, &optRate, &optRate);
+                        audioStream->addAvailableFormat(&format, &optRate, &optRate);
+                    }
                 }
             }else{
                 IOAudioSampleRate optRate;

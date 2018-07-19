@@ -480,7 +480,7 @@ IOAudioStream *kXAudioEngine::createNewAudioStream(int chn,IOAudioStreamDirectio
                 int mapping[]=
                 { //2,3,4,5,6,7,8,9 - kX:  front, rear, center+lfe, back
                     //1,2,3,4,5,6,7,8 - OSX: front, center+lfe, rear, back
-                    2,3,6,7,4,5,8,9 };
+                    6,7,2,3,4,5,8,9 };
                 // wave 2/3 - front
                 // wave 6/7 - center+lfe
                 // wave 4/5 - rear

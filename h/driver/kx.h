@@ -445,6 +445,7 @@ struct kx_hw
     
     int defaultSampleRate = 44100;
     bool useOtherMapping = false;
+    int kxOutputLayout;
     
     // PCI info
     byte pci_bus;   // used only by spy.exe:

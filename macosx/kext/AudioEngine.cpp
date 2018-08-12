@@ -479,25 +479,27 @@ IOAudioStream *kXAudioEngine::createNewAudioStream(int chn,IOAudioStreamDirectio
                 if(chn==0) // first voice?
                     need_notifier|=VOICE_OPEN_NOTIFY; // half/full buffer
                 
-                int mapping[8];
-                if (hw->useOtherMapping){
-                    int incrementCounter=7;
-                    while(kxOutputLayout > 0){
-                        mapping[incrementCounter] = kxOutputLayout % 10;
-                        kxOutputLayout = kxOutputLayout/10;
-                        incrementCounter--; // doing it backwards to populate the array properly. hax!
-                    }
-                } else {
-                    int mapping[8]=
-                    { //2,3,4,5,6,7,8,9 - kX:  front, rear, center+lfe, back
-                        //1,2,3,4,5,6,7,8 - OSX: front, center+lfe, rear, back
-                        2,3,6,7,4,5,8,9 };
+                int mapping[8]=
+                {
+                    //2,3,4,5,6,7,8,9 - kX:  front, rear, center+lfe, back
+                    //1,2,3,4,5,6,7,8 - OSX: front, center+lfe, rear, back
+                    2,3,6,7,4,5,8,9
                     // wave 2/3 - front
                     // wave 6/7 - center+lfe
                     // wave 4/5 - rear
                     // 8/9 - rear center/etc.
-                }
+                };
                 
+                if (hw->useOtherMapping)
+                {
+                    int kxlayout = hw->kxOutputLayout;
+                    for (int incrementCounter=7; incrementCounter>-1; incrementCounter--)
+                    {
+                        mapping[incrementCounter] = kxlayout % 10;
+                        kxlayout = kxlayout/10;
+                    }
+                }
+            
                 int i=kx_allocate_multichannel(hw,bps,sampling_rate,need_notifier,&buffer,DEF_ASIO_ROUTING+mapping[chn]); // start with 2/3
                 
                 if(i>=0)

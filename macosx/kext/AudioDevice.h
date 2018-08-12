@@ -132,9 +132,6 @@ public:
     
     int create_audio_controls(IOAudioEngine *audioEngine);
     
-    // layout control
-    int kxOutputLayout;
-    
 public:
     virtual IOReturn user_request(const void* inStruct, void* outStruct,uint32_t inStructSize, const uint32_t* outStructSize);
     

@@ -298,7 +298,7 @@ bool kXAudioDevice::initHardware(IOService *provider)
         
     }
     
-    if (PE_parse_boot_argn("-kx_other_outputs", &kxOutputLayout, sizeof(kxOutputLayout)) || PE_parse_boot_argn("-kxotherout", &kxOutputLayout, sizeof(kxOutputLayout))){
+    if (PE_parse_boot_argn("-kx_other_outputs", &hw->kxOutputLayout, sizeof(hw->kxOutputLayout)) || PE_parse_boot_argn("-kxotherout", &hw->kxOutputLayout, sizeof(hw->kxOutputLayout))){
         hw->useOtherMapping = true;
         arg++;
         debug(DBGCLASS"[%p]::initHardware: custom output layout enabled with -kx_other_outputs or -kxotherout\n",this);

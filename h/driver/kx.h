@@ -444,6 +444,7 @@ struct kx_hw
     bool disableFixes = false;
     
     int defaultSampleRate = 44100;
+    bool useOtherMapping = false;
     
     // PCI info
     byte pci_bus;   // used only by spy.exe:

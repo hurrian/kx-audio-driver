@@ -32,6 +32,8 @@
 #define super IOAudioEngine
 OSDefineMetaClassAndStructors(kXAudioEngine, IOAudioEngine)
 
+extern int kxOutputLayout;
+
 // ----- Configuration ------
 
 bool kXAudioEngine::init(kx_hw *hw_)
@@ -40,7 +42,7 @@ bool kXAudioEngine::init(kx_hw *hw_)
     
     dump_addr();
     
-    debug("kXAudioEngine[%p]::init, new istance created\n", this);
+    debug("kXAudioEngine[%p]::init, new instance created\n", this);
     
     hw = hw_;
     
@@ -477,14 +479,24 @@ IOAudioStream *kXAudioEngine::createNewAudioStream(int chn,IOAudioStreamDirectio
                 if(chn==0) // first voice?
                     need_notifier|=VOICE_OPEN_NOTIFY; // half/full buffer
                 
-                int mapping[]=
-                { //2,3,4,5,6,7,8,9 - kX:  front, rear, center+lfe, back
-                    //1,2,3,4,5,6,7,8 - OSX: front, center+lfe, rear, back
-                    6,7,2,3,4,5,8,9 };
-                // wave 2/3 - front
-                // wave 6/7 - center+lfe
-                // wave 4/5 - rear
-                // 8/9 - rear center/etc.
+                int mapping[8];
+                if (hw->useOtherMapping){
+                    int incrementCounter=7;
+                    while(kxOutputLayout > 0){
+                        mapping[incrementCounter] = kxOutputLayout % 10;
+                        kxOutputLayout = kxOutputLayout/10;
+                        incrementCounter--; // doing it backwards to populate the array properly. hax!
+                    }
+                } else {
+                    int mapping[8]=
+                    { //2,3,4,5,6,7,8,9 - kX:  front, rear, center+lfe, back
+                        //1,2,3,4,5,6,7,8 - OSX: front, center+lfe, rear, back
+                        2,3,6,7,4,5,8,9 };
+                    // wave 2/3 - front
+                    // wave 6/7 - center+lfe
+                    // wave 4/5 - rear
+                    // 8/9 - rear center/etc.
+                }
                 
                 int i=kx_allocate_multichannel(hw,bps,sampling_rate,need_notifier,&buffer,DEF_ASIO_ROUTING+mapping[chn]); // start with 2/3
                 
